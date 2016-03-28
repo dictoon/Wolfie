@@ -1,19 +1,30 @@
 #include <SDL.h>
 #include <SDL_main.h>
 
-#include <algorithm>
-#include <cassert>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
-#include <iostream>
+#include <cstdio>
 
 using namespace std;
 
 #define myassert(cond) if (!(cond)) { __debugbreak(); }
 
-const size_t ScreenWidth = 800;
-const size_t ScreenHeight = 600;
+template <typename T>
+T min(T x, T y)
+{
+    return x < y ? x : y;
+}
+
+const float Pi = 3.1415926535897932f;
+const float Infinity = 1.0e20f;
+
+float dtor(float d)
+{
+    return d * Pi / 180.0f;
+}
+
+const int ScreenWidth = 800;
+const int ScreenHeight = 600;
 
 struct ScreenPixel
 {
@@ -30,8 +41,8 @@ ScreenPixel rgb(uint8_t r, uint8_t g, uint8_t b)
 
 #if 0
 
-const size_t MapW = 4;
-const size_t MapH = 4;
+const int MapW = 4;
+const int MapH = 4;
 
 // (0,0) at bottom left.
 const uint8_t Map[MapW * MapH] =
@@ -44,8 +55,8 @@ const uint8_t Map[MapW * MapH] =
 
 #else
 
-const size_t MapW = 8;
-const size_t MapH = 8;
+const int MapW = 8;
+const int MapH = 8;
 
 // (0,0) at bottom left.
 const uint8_t Map[MapW * MapH] =
@@ -67,27 +78,26 @@ uint8_t map(const int ix, const int iy)
     myassert(
         ix >= 0 &&
         iy >= 0 &&
-        ix <= static_cast<int>(MapW) - 1 &&
-        iy <= static_cast<int>(MapH) - 1);
+        ix <= MapW - 1 &&
+        iy <= MapH - 1);
     return
         ix >= 0 &&
         iy >= 0 &&
-        ix <= static_cast<int>(MapW) - 1 &&
-        iy <= static_cast<int>(MapH) - 1
+        ix <= MapW - 1 &&
+        iy <= MapH - 1
             ? Map[(MapH - 1 - iy) * MapW + ix]
             : 1;
 }
 
-const float Pi = 3.1415926535897932f;
-const float HFov = 90.0f * Pi / 180.0f;
+const float HFov = dtor(90.0f);
 const float VFov = HFov * ScreenHeight / ScreenWidth;
-const float PlayerMoveSpeed = 0.03f;
-const float PlayerRotateSpeed = 3.0f * Pi / 180.0f;
 const float FilmWidth = 0.01f;
 const float FilmHeight = FilmWidth * ScreenHeight / ScreenWidth;
 const float FocalLength = FilmWidth / 2.0f * tan(HFov / 2.0f);
 const float WallHeight = 1.0f;
-const float Infinity = 1.0e20f;
+
+const float PlayerMoveSpeed = 0.03f;
+const float PlayerRotateSpeed = dtor(3.0f);
 
 struct Player
 {
@@ -100,7 +110,7 @@ void init()
 {
     player.x = 2.0f;
     player.y = 2.0f;
-    player.a = 180.0f * Pi / 180.0f;
+    player.a = dtor(90.0f);
 }
 
 bool cast_ray(
@@ -193,7 +203,7 @@ bool cast_ray(
             {
                 ix += 1;
                 myassert(ix == static_cast<int>(x));
-                myassert(ix <= static_cast<int>(MapW - 1));
+                myassert(ix <= MapW - 1);
                 iy = static_cast<int>(y);
             }
             else
@@ -221,7 +231,7 @@ bool cast_ray(
             {
                 iy += 1;
                 myassert(iy == static_cast<int>(y));
-                myassert(iy <= static_cast<int>(MapH - 1));
+                myassert(iy <= MapH - 1);
                 ix = static_cast<int>(x);
             }
             else
@@ -331,9 +341,9 @@ void update()
 
 void render(ScreenPixel* pixels)
 {
-    for (size_t x = 0; x < ScreenWidth; ++x)
+    for (int x = 0; x < ScreenWidth; ++x)
     {
-        for (size_t y = 0; y < ScreenHeight; ++y)
+        for (int y = 0; y < ScreenHeight; ++y)
             pixels[y * ScreenWidth + x] = rgb(150, 150, 150);
 
         const float sx = (FilmWidth * 0.5f) - (x + 0.5f) * (FilmWidth / ScreenWidth);
@@ -352,13 +362,13 @@ void render(ScreenPixel* pixels)
             const float d = sqrt(dx * dx + dy * dy) * cos(a - player.a);
             const float h = FocalLength * WallHeight / d;
 
-            const size_t hhy = static_cast<size_t>(h / FilmHeight * ScreenHeight) / 2;
-            const size_t midy = ScreenHeight / 2;
-            const size_t starty = hhy <= midy ? midy - hhy : 0;
-            const size_t endy = midy + hhy <= ScreenHeight - 1 ? midy + hhy : ScreenHeight - 1;
+            const int hhy = static_cast<int>(h / FilmHeight * ScreenHeight) / 2;
+            const int midy = ScreenHeight / 2;
+            const int starty = hhy <= midy ? midy - hhy : 0;
+            const int endy = midy + hhy <= ScreenHeight - 1 ? midy + hhy : ScreenHeight - 1;
 
             const uint8_t shade = 220 - static_cast<uint8_t>(min(d / 8.0f * 255.0f, 200.0f));
-            for (size_t y = starty; y < endy; ++y)
+            for (int y = starty; y < endy; ++y)
                 pixels[y * ScreenWidth + x] = rgb(shade, shade, shade);
         }
     }
@@ -368,7 +378,7 @@ extern "C" int main(int argc, char* argv[])
 {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
     {
-        cerr << "SDL_Init Error: " << SDL_GetError() << endl;
+        fprintf(stderr, "SDL_Init Error: %s\n", SDL_GetError());
         return 1;
     }
 
@@ -381,7 +391,7 @@ extern "C" int main(int argc, char* argv[])
             SDL_WINDOW_SHOWN);
     if (window == nullptr)
     {
-        cerr << "SDL_CreateWindow Error: " << SDL_GetError() << endl;
+        fprintf(stderr, "SDL_CreateWindow Error: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
@@ -394,7 +404,7 @@ extern "C" int main(int argc, char* argv[])
     if (renderer == nullptr)
     {
         SDL_DestroyWindow(window);
-        cerr << "SDL_CreateRenderer Error: " << SDL_GetError() << endl;
+        fprintf(stderr, "SDL_CreateRenderer Error: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
