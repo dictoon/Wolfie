@@ -10,7 +10,11 @@
 
 using namespace std;
 
+#ifdef NDEBUG
+#define myassert(cond)
+#else
 #define myassert(cond) if (!(cond)) { __debugbreak(); }
+#endif
 
 template <typename T>
 T min(T x, T y)
@@ -464,7 +468,7 @@ void renderview(ScreenPixel* pixels)
             const int wallheight = static_cast<int>(h / FilmHeight * ScreenHeight);
             const float rcpwallheight = 1.0f / wallheight;
             const int starty = max(wallheight / 2 - ScreenHeight / 2, 0);
-            const int endy = min(ScreenHeight / 2 - 1 + wallheight / 2, wallheight - 1);
+            const int endy = min(ScreenHeight / 2 + wallheight / 2, wallheight);
 
             const float shade = 1.0f - min(d / 8.0f, 1.0f);
 
@@ -476,7 +480,7 @@ void renderview(ScreenPixel* pixels)
                 const float fu1 = 1.0f - fu0;
                 myassert(fu0 >= 0.0f && fu0 < 1.0f);
 
-                for (int y = starty; y <= endy; ++y)
+                for (int y = starty; y < endy; ++y)
                 {
                     const float v = (y + 0.5f) * rcpwallheight;
                     const float sv = v * textures[0].h - 0.5f;
@@ -515,7 +519,7 @@ void renderview(ScreenPixel* pixels)
                 const float fu = su - iu;
                 myassert(fu >= 0.0f && fu < 1.0f);
 
-                for (int y = starty; y <= endy; ++y)
+                for (int y = starty; y < endy; ++y)
                 {
                     const float v = (y + 0.5f) * rcpwallheight;
                     const float sv = v * textures[0].h;
