@@ -18,6 +18,12 @@ T min(T x, T y)
     return x < y ? x : y;
 }
 
+template <typename T>
+T max(T x, T y)
+{
+    return x > y ? x : y;
+}
+
 const float Pi = 3.1415926535897932f;
 const float Infinity = 1.0e20f;
 
@@ -26,8 +32,8 @@ float dtor(float d)
     return d * Pi / 180.0f;
 }
 
-const int ScreenWidth = 1024;
-const int ScreenHeight = 768;
+const int ScreenWidth = 1280;
+const int ScreenHeight = 1024;
 
 struct ScreenPixel
 {
@@ -136,6 +142,15 @@ void load_texture(Texture* tex, const char* filepath)
     tex->data = stbi_load(filepath, &tex->w, &tex->h, &tex->n, 4);
 }
 
+const uint8_t* lookup_texture(const Texture* tex, int x, int y)
+{
+    if (x < 0) x += tex->w;
+    if (y < 0) y += tex->h;
+    if (x > tex->w - 1) x -= tex->w;
+    if (y > tex->h - 1) y -= tex->h;
+    return &tex->data[(y * tex->w + x) * 4];
+}
+
 const int NumTextures = 1;
 const char* TextureFilePaths[NumTextures] =
 {
@@ -146,6 +161,7 @@ Texture textures[1];
 
 Player player;
 bool minimap = false;
+bool bilinear = true;
 
 void init()
 {
@@ -446,25 +462,78 @@ void renderview(ScreenPixel* pixels)
             const float h = FocalLength * WallHeight / d;
 
             const int wallheight = static_cast<int>(h / FilmHeight * ScreenHeight);
+            const float rcpwallheight = 1.0f / wallheight;
+            const int starty = max(wallheight / 2 - ScreenHeight / 2, 0);
+            const int endy = min(ScreenHeight / 2 - 1 + wallheight / 2, wallheight - 1);
 
             const float shade = 1.0f - min(d / 8.0f, 1.0f);
 
-            const int iu = static_cast<int>(u * textures[0].w);
-
-            for (int y = 0; y < wallheight; ++y)
+            if (bilinear)
             {
-                const int py = ScreenHeight / 2 + y - wallheight / 2;
-                if (py < 0 || py > ScreenHeight - 1)
-                    continue;
+                const float su = u * textures[0].w - 0.5f;
+                const int iu = static_cast<int>(floor(su));
+                const float fu0 = su - iu;
+                const float fu1 = 1.0f - fu0;
+                myassert(fu0 >= 0.0f && fu0 < 1.0f);
 
-                const float v = static_cast<float>(y + 0.5) / wallheight;
-                const int iv = static_cast<int>(v * textures[0].h);
-                const uint8_t* tex = &textures[0].data[(iv * textures[0].w + iu) * 4];
-                pixels[py * ScreenWidth + x] =
-                    rgb(
-                        static_cast<uint8_t>(tex[0] * shade),
-                        static_cast<uint8_t>(tex[1] * shade),
-                        static_cast<uint8_t>(tex[2] * shade));
+                for (int y = starty; y <= endy; ++y)
+                {
+                    const float v = (y + 0.5f) * rcpwallheight;
+                    const float sv = v * textures[0].h - 0.5f;
+                    const int iv = static_cast<int>(floor(sv));
+                    const float fv0 = sv - iv;
+                    const float fv1 = 1.0f - fv0;
+                    myassert(fv0 >= 0.0f && fv0 < 1.0f);
+
+                    const Texture* tex = &textures[0];
+                    const uint8_t* data00 = lookup_texture(tex, iu + 0, iv + 0);
+                    const uint8_t* data10 = lookup_texture(tex, iu + 1, iv + 0);
+                    const uint8_t* data01 = lookup_texture(tex, iu + 0, iv + 1);
+                    const uint8_t* data11 = lookup_texture(tex, iu + 1, iv + 1);
+
+                    float r = (data00[0] * fu1 + data10[0] * fu0) * fv1 + (data01[0] * fu1 + data11[0] * fu0) * fv0;
+                    float g = (data00[1] * fu1 + data10[1] * fu0) * fv1 + (data01[1] * fu1 + data11[1] * fu0) * fv0;
+                    float b = (data00[2] * fu1 + data10[2] * fu0) * fv1 + (data01[2] * fu1 + data11[2] * fu0) * fv0;
+
+                    r *= shade;
+                    g *= shade;
+                    b *= shade;
+
+                    const int py = y + (ScreenHeight / 2 - wallheight / 2);
+                    pixels[py * ScreenWidth + x] =
+                        rgb(
+                            static_cast<uint8_t>(r),
+                            static_cast<uint8_t>(g),
+                            static_cast<uint8_t>(b));
+                }
+            }
+            else
+            {
+                const float su = u * textures[0].w;
+                const int iu = static_cast<int>(su);
+                myassert(iu >= 0 && iu < textures[0].w);
+                const float fu = su - iu;
+                myassert(fu >= 0.0f && fu < 1.0f);
+
+                for (int y = starty; y <= endy; ++y)
+                {
+                    const float v = (y + 0.5f) * rcpwallheight;
+                    const float sv = v * textures[0].h;
+                    const int iv = static_cast<int>(sv);
+                    myassert(iv >= 0 && iv < textures[0].h);
+                    const float fv = sv - iv;
+                    myassert(fv >= 0.0f && fv < 1.0f);
+
+                    const Texture* tex = &textures[0];
+                    const uint8_t* data = &tex->data[(iv * tex->w + iu) * 4];
+
+                    const int py = y + (ScreenHeight / 2 - wallheight / 2);
+                    pixels[py * ScreenWidth + x] =
+                        rgb(
+                            static_cast<uint8_t>(data[0] * shade),
+                            static_cast<uint8_t>(data[1] * shade),
+                            static_cast<uint8_t>(data[2] * shade));
+                }
             }
         }
     }
@@ -589,6 +658,10 @@ extern "C" int main(int argc, char* argv[])
                     quit = true;
                     break;
 
+                  case SDLK_b:
+                    bilinear = !bilinear;
+                    break;
+
                   case SDLK_r:
                     player.reset();
                     break;
@@ -604,7 +677,12 @@ extern "C" int main(int argc, char* argv[])
         }
 
         update();
+
+        const uint32_t starttime = SDL_GetTicks();
         render(pixels);
+        const uint32_t elapsed = SDL_GetTicks() - starttime;
+        const uint32_t fps = 1000 / elapsed;
+        fprintf(stderr, "fps: %u\n", fps);
 
         SDL_UpdateTexture(screen_texture, nullptr, pixels, ScreenWidth * sizeof(ScreenPixel));
 
