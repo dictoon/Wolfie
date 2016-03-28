@@ -39,6 +39,11 @@ ScreenPixel rgb(uint8_t r, uint8_t g, uint8_t b)
     return { b, g, r, 255 };
 }
 
+void setpix(ScreenPixel* pixels, const int x, const int y, const ScreenPixel& color)
+{
+    pixels[y * ScreenWidth + x] = color;
+}
+
 #if 0
 
 const int MapW = 4;
@@ -73,13 +78,8 @@ const uint8_t Map[MapW * MapH] =
 
 #endif
 
-uint8_t map(const int ix, const int iy)
+uint8_t safemap(const int ix, const int iy)
 {
-    myassert(
-        ix >= 0 &&
-        iy >= 0 &&
-        ix <= MapW - 1 &&
-        iy <= MapH - 1);
     return
         ix >= 0 &&
         iy >= 0 &&
@@ -89,15 +89,26 @@ uint8_t map(const int ix, const int iy)
             : 1;
 }
 
+uint8_t map(const int ix, const int iy)
+{
+    myassert(
+        ix >= 0 &&
+        iy >= 0 &&
+        ix <= MapW - 1 &&
+        iy <= MapH - 1);
+    return safemap(ix, iy);
+}
+
 const float HFov = dtor(90.0f);
 const float VFov = HFov * ScreenHeight / ScreenWidth;
 const float FilmWidth = 0.01f;
 const float FilmHeight = FilmWidth * ScreenHeight / ScreenWidth;
 const float FocalLength = FilmWidth / 2.0f * tan(HFov / 2.0f);
 const float WallHeight = 1.0f;
+const float WallPadding = 0.1f;
 
-const float PlayerMoveSpeed = 0.03f;
-const float PlayerRotateSpeed = dtor(3.0f);
+const float PlayerMoveSpeed = 0.04f;
+const float PlayerRotateSpeed = dtor(5.0f);
 
 struct Player
 {
@@ -105,6 +116,7 @@ struct Player
 };
 
 Player player;
+bool minimap = false;
 
 void init()
 {
@@ -166,7 +178,6 @@ bool cast_ray(
         }
         else tx = Infinity;
 
-
         float wally, ty;
         if (dy > 0.0f)
         {
@@ -190,8 +201,7 @@ bool cast_ray(
         }
         else ty = Infinity;
 
-
-        myassert(tx < ty || ty < tx);
+        myassert(tx < Infinity || ty < Infinity);
 
         if (tx < ty)
         {
@@ -293,53 +303,85 @@ void update()
         dy -= PlayerMoveSpeed * sin(player.a);
     }
 
-    const float Margin = 0.2f;
-
     const int ix = static_cast<int>(player.x);
     const int iy = static_cast<int>(player.y);
-    const int nx = ix + (dx > 0.0f ? 1 : -1);
-    const int ny = iy + (dy > 0.0f ? 1 : -1);
 
-    if (map(nx, iy))
+    myassert(map(ix, iy) == 0);
+
+    for (int y = iy - 1; y <= iy + 1; ++y)
     {
-        if (dx > 0.0f)
+        for (int x = ix - 1; x <= ix + 1; ++x)
         {
-            const float wallx = nx - Margin;
-            if (player.x + dx >= wallx)
-                player.x = wallx;
-            else player.x += dx;
-        }
-        else if (dx < 0.0f)
-        {
-            const float wallx = nx + 1 + Margin;
-            if (player.x + dx <= wallx)
-                player.x = wallx;
-            else player.x += dx;
+            if (x == ix && y == iy)
+                continue;
+
+            if (safemap(x, y) != 0)
+            {
+                const float blockx0 = x - WallPadding;
+                const float blocky0 = y - WallPadding;
+                const float blockx1 = x + 1 + WallPadding;
+                const float blocky1 = y + 1 + WallPadding;
+
+                if (dx > 0.0f && safemap(x - 1, y) == 0)
+                {
+                    const float t = (blockx0 - player.x) / dx;
+                    if (t >= 0.0f && t < 1.0f)
+                    {
+                        const float ay = player.y + t * dy;
+                        if (ay >= blocky0 && ay <= blocky1)
+                        {
+                            dx = blockx0 - player.x;
+                        }
+                    }
+                }
+
+                if (dx < 0.0f && safemap(x + 1, y) == 0)
+                {
+                    const float t = (blockx1 - player.x) / dx;
+                    if (t >= 0.0f && t < 1.0f)
+                    {
+                        const float ay = player.y + t * dy;
+                        if (ay >= blocky0 && ay <= blocky1)
+                        {
+                            dx = blockx1 - player.x;
+                        }
+                    }
+                }
+
+                if (dy > 0.0f && safemap(x, y - 1) == 0)
+                {
+                    const float t = (blocky0 - player.y) / dy;
+                    if (t >= 0.0f && t < 1.0f)
+                    {
+                        const float ax = player.x + t * dx;
+                        if (ax >= blockx0 && ax <= blockx1)
+                        {
+                            dy = blocky0 - player.y;
+                        }
+                    }
+                }
+
+                if (dy < 0.0f && safemap(x, y + 1) == 0)
+                {
+                    const float t = (blocky1 - player.y) / dy;
+                    if (t >= 0.0f && t < 1.0f)
+                    {
+                        const float ax = player.x + t * dx;
+                        if (ax >= blockx0 && ax <= blockx1)
+                        {
+                            dy = blocky1 - player.y;
+                        }
+                    }
+                }
+            }
         }
     }
-    else player.x += dx;
 
-    if (map(ix, ny))
-    {
-        if (dy > 0.0f)
-        {
-            const float wally = ny - Margin;
-            if (player.y + dy >= wally)
-                player.y = wally;
-            else player.y += dy;
-        }
-        else if (dy < 0.0f)
-        {
-            const float wally = ny + 1 + Margin;
-            if (player.y + dy <= wally)
-                player.y = wally;
-            else player.y += dy;
-        }
-    }
-    else player.y += dy;
+    player.x += dx;
+    player.y += dy;
 }
 
-void render(ScreenPixel* pixels)
+void renderview(ScreenPixel* pixels)
 {
     for (int x = 0; x < ScreenWidth; ++x)
     {
@@ -374,6 +416,59 @@ void render(ScreenPixel* pixels)
     }
 }
 
+void rendermap(ScreenPixel* pixels)
+{
+    const int CellSize = 40;
+
+    for (int y = 0; y < MapH * CellSize; ++y)
+    {
+        for (int x = 0; x < MapW * CellSize; ++x)
+        {
+            ScreenPixel color;
+
+            const float wx = static_cast<float>(x) / CellSize;
+            const float wy = static_cast<float>(y) / CellSize;
+
+            const int ix = static_cast<int>(wx);
+            const int iy = static_cast<int>(wy);
+
+            const uint8_t cell = map(ix, iy);
+            color = cell == 0 ? rgb(150, 150, 150) : rgb(220, 220, 220);
+
+            const float fx = wx - ix;
+            const float fy = wy - iy;
+
+            if (cell == 0)
+            {
+                if ((fx <= WallPadding && safemap(ix - 1, iy) != 0) ||
+                    (fx >= 1.0f - WallPadding && safemap(ix + 1, iy) != 0) ||
+                    (fy <= WallPadding && safemap(ix, iy - 1) != 0) ||
+                    (fy >= 1.0f - WallPadding && safemap(ix, iy + 1) != 0) ||
+                    (fx <= WallPadding && fy <= WallPadding && safemap(ix - 1, iy - 1) != 0) ||
+                    (fx >= 1.0f - WallPadding && fy <= WallPadding && safemap(ix + 1, iy - 1) != 0) ||
+                    (fx <= WallPadding && fy >= 1.0f - WallPadding && safemap(ix - 1, iy + 1)) ||
+                    (fx >= 1.0f - WallPadding && fy >= 1.0f - WallPadding && safemap(ix + 1, iy + 1) != 0))
+                    color = rgb(150, 180, 150);
+            }
+
+            const float dpx = wx - player.x;
+            const float dpy = wy - player.y;
+            if (sqrt(dpx * dpx + dpy * dpy) <= 0.05f)
+                color = rgb(255, 0, 0);
+
+            setpix(pixels, x, MapH * CellSize - 1 - y, color);
+        }
+    }
+}
+
+void render(ScreenPixel* pixels)
+{
+    renderview(pixels);
+
+    if (minimap)
+        rendermap(pixels);
+}
+
 extern "C" int main(int argc, char* argv[])
 {
     if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -384,7 +479,7 @@ extern "C" int main(int argc, char* argv[])
 
     SDL_Window* window =
         SDL_CreateWindow(
-            "Wolf Fizzle",
+            "Wolfie",
             SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
             static_cast<int>(ScreenWidth),
             static_cast<int>(ScreenHeight),
@@ -442,6 +537,10 @@ extern "C" int main(int argc, char* argv[])
 
                   case SDLK_r:
                     init();
+                    break;
+
+                  case SDLK_TAB:
+                    minimap = !minimap;
                     break;
                 }
 
