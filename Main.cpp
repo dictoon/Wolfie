@@ -1,3 +1,6 @@
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <SDL.h>
 #include <SDL_main.h>
 
@@ -23,8 +26,8 @@ float dtor(float d)
     return d * Pi / 180.0f;
 }
 
-const int ScreenWidth = 800;
-const int ScreenHeight = 600;
+const int ScreenWidth = 1024;
+const int ScreenHeight = 768;
 
 struct ScreenPixel
 {
@@ -113,22 +116,56 @@ const float PlayerRotateSpeed = dtor(5.0f);
 struct Player
 {
     float x, y, a;
+
+    void reset()
+    {
+        x = 2.0f;
+        y = 2.0f;
+        a = dtor(90.0f);
+    }
 };
+
+struct Texture
+{
+    int w, h, n;
+    uint8_t* data;
+};
+
+void load_texture(Texture* tex, const char* filepath)
+{
+    tex->data = stbi_load(filepath, &tex->w, &tex->h, &tex->n, 4);
+}
+
+const int NumTextures = 1;
+const char* TextureFilePaths[NumTextures] =
+{
+    "textures/407.png"
+};
+
+Texture textures[1];
 
 Player player;
 bool minimap = false;
 
 void init()
 {
-    player.x = 2.0f;
-    player.y = 2.0f;
-    player.a = dtor(90.0f);
+    for (int i = 0; i < NumTextures; ++i)
+        load_texture(&textures[i], TextureFilePaths[i]);
+
+    player.reset();
+}
+
+void done()
+{
+    for (int i = 0; i < NumTextures; ++i)
+        stbi_image_free(textures[i].data);
 }
 
 bool cast_ray(
     const float x0, const float y0,
     const float x1, const float y1,
-    float* hx, float* hy)
+    float* hx, float* hy,
+    float* u)
 {
     myassert(x0 >= 0.0f && x0 < static_cast<float>(MapW));
     myassert(y0 >= 0.0f && y0 < static_cast<float>(MapH));
@@ -228,6 +265,7 @@ bool cast_ray(
             {
                 *hx = x;
                 *hy = y;
+                *u = y - iy;
                 return true;
             }
         }
@@ -256,6 +294,7 @@ bool cast_ray(
             {
                 *hx = x;
                 *hy = y;
+                *u = x - ix;
                 return true;
             }
         }
@@ -393,25 +432,40 @@ void renderview(ScreenPixel* pixels)
 
         const float MaxDist = 1000.0f;
         float hx, hy;
+        float u;
         if (cast_ray(
                 player.x, player.y,
                 player.x + MaxDist * cos(a),
                 player.y + MaxDist * sin(a),
-                &hx, &hy))
+                &hx, &hy,
+                &u))
         {
             const float dx = hx - player.x;
             const float dy = hy - player.y;
             const float d = sqrt(dx * dx + dy * dy) * cos(a - player.a);
             const float h = FocalLength * WallHeight / d;
 
-            const int hhy = static_cast<int>(h / FilmHeight * ScreenHeight) / 2;
-            const int midy = ScreenHeight / 2;
-            const int starty = hhy <= midy ? midy - hhy : 0;
-            const int endy = midy + hhy <= ScreenHeight - 1 ? midy + hhy : ScreenHeight - 1;
+            const int wallheight = static_cast<int>(h / FilmHeight * ScreenHeight);
 
-            const uint8_t shade = 220 - static_cast<uint8_t>(min(d / 8.0f * 255.0f, 200.0f));
-            for (int y = starty; y < endy; ++y)
-                pixels[y * ScreenWidth + x] = rgb(shade, shade, shade);
+            const float shade = 1.0f - min(d / 8.0f, 1.0f);
+
+            const int iu = static_cast<int>(u * textures[0].w);
+
+            for (int y = 0; y < wallheight; ++y)
+            {
+                const int py = ScreenHeight / 2 + y - wallheight / 2;
+                if (py < 0 || py > ScreenHeight - 1)
+                    continue;
+
+                const float v = static_cast<float>(y + 0.5) / wallheight;
+                const int iv = static_cast<int>(v * textures[0].h);
+                const uint8_t* tex = &textures[0].data[(iv * textures[0].w + iu) * 4];
+                pixels[py * ScreenWidth + x] =
+                    rgb(
+                        static_cast<uint8_t>(tex[0] * shade),
+                        static_cast<uint8_t>(tex[1] * shade),
+                        static_cast<uint8_t>(tex[2] * shade));
+            }
         }
     }
 }
@@ -516,7 +570,8 @@ extern "C" int main(int argc, char* argv[])
     
     init();
 
-    while (true)
+    bool quit = false;
+    while (!quit)
     {
         SDL_Event e;
         while (SDL_PollEvent(&e))
@@ -524,19 +579,18 @@ extern "C" int main(int argc, char* argv[])
             switch (e.type)
             {
               case SDL_QUIT:
-              case SDLK_ESCAPE:
-                SDL_Quit();
-                return 0;
+                quit = true;
+                break;
 
               case SDL_KEYDOWN:
                 switch (e.key.keysym.sym)
                 {
                   case SDLK_ESCAPE:
-                    SDL_Quit();
-                    return 0;
+                    quit = true;
+                    break;
 
                   case SDLK_r:
-                    init();
+                    player.reset();
                     break;
 
                   case SDLK_TAB:
@@ -558,4 +612,9 @@ extern "C" int main(int argc, char* argv[])
         SDL_RenderCopy(renderer, screen_texture, NULL, NULL);
         SDL_RenderPresent(renderer);
     }
+
+    done();
+    SDL_Quit();
+
+    return 0;
 }
