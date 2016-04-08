@@ -36,8 +36,8 @@ float dtor(float d)
     return d * Pi / 180.0f;
 }
 
-const int ScreenWidth = 1280;
-const int ScreenHeight = 1024;
+const int ScreenWidth = 1024;
+const int ScreenHeight = 768;
 
 struct ScreenPixel
 {
