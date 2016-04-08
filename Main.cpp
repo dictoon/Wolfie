@@ -120,7 +120,8 @@ const float FocalLength = FilmWidth / 2.0f * tan(HFov / 2.0f);
 const float WallHeight = 1.0f;
 const float WallPadding = 0.1f;
 
-const float PlayerMoveSpeed = 0.04f;
+const float PlayerWalkSpeed = 0.03f;
+const float PlayerRunSpeed = 0.06f;
 const float PlayerRotateSpeed = dtor(5.0f);
 
 struct Player
@@ -164,8 +165,9 @@ const char* TextureFilePaths[NumTextures] =
 Texture textures[1];
 
 Player player;
+bool texture = true;
+bool bilinear = false;
 bool minimap = false;
-bool bilinear = true;
 
 void init()
 {
@@ -330,12 +332,15 @@ void update()
 
     float dx = 0.0f, dy = 0.0f;
 
+    const float movespeed =
+        (keys[SDL_SCANCODE_LSHIFT] | keys[SDL_SCANCODE_RSHIFT]) ? PlayerRunSpeed : PlayerWalkSpeed;
+
     if (keys[SDL_SCANCODE_LEFT])
     {
         if (keys[SDL_SCANCODE_LALT])
         {
-            dx += PlayerMoveSpeed * cos(player.a + Pi / 2.0f);
-            dy += PlayerMoveSpeed * sin(player.a + Pi / 2.0f);
+            dx += movespeed * cos(player.a + Pi / 2.0f);
+            dy += movespeed * sin(player.a + Pi / 2.0f);
         }
         else player.a += PlayerRotateSpeed;
     }
@@ -344,22 +349,22 @@ void update()
     {
         if (keys[SDL_SCANCODE_LALT])
         {
-            dx += PlayerMoveSpeed * cos(player.a - Pi / 2.0f);
-            dy += PlayerMoveSpeed * sin(player.a - Pi / 2.0f);
+            dx += movespeed * cos(player.a - Pi / 2.0f);
+            dy += movespeed * sin(player.a - Pi / 2.0f);
         }
         else player.a -= PlayerRotateSpeed;
     }
 
     if (keys[SDL_SCANCODE_UP])
     {
-        dx += PlayerMoveSpeed * cos(player.a);
-        dy += PlayerMoveSpeed * sin(player.a);
+        dx += movespeed * cos(player.a);
+        dy += movespeed * sin(player.a);
     }
 
     if (keys[SDL_SCANCODE_DOWN])
     {
-        dx -= PlayerMoveSpeed * cos(player.a);
-        dy -= PlayerMoveSpeed * sin(player.a);
+        dx -= movespeed * cos(player.a);
+        dy -= movespeed * sin(player.a);
     }
 
     const int ix = static_cast<int>(player.x);
@@ -444,9 +449,6 @@ void renderview(ScreenPixel* pixels)
 {
     for (int x = 0; x < ScreenWidth; ++x)
     {
-        for (int y = 0; y < ScreenHeight; ++y)
-            pixels[y * ScreenWidth + x] = rgb(150, 150, 150);
-
         const float sx = (FilmWidth * 0.5f) - (x + 0.5f) * (FilmWidth / ScreenWidth);
         const float a = player.a + atan2(sx, FocalLength);
 
@@ -467,77 +469,94 @@ void renderview(ScreenPixel* pixels)
 
             const int wallheight = static_cast<int>(h / FilmHeight * ScreenHeight);
             const float rcpwallheight = 1.0f / wallheight;
-            const int starty = max(wallheight / 2 - ScreenHeight / 2, 0);
-            const int endy = min(ScreenHeight / 2 + wallheight / 2, wallheight);
+            const int wallstarty = ScreenHeight / 2 - wallheight / 2;
+            const int wallendy = ScreenHeight / 2 + wallheight / 2;
+            const int starty = max(wallstarty, 0);
+            const int endy = min(wallendy, ScreenHeight);
 
-            const float shade = 1.0f - min(d / 8.0f, 1.0f);
+            // Sky.
+            for (int y = 0; y < starty; ++y)
+                pixels[y * ScreenWidth + x] = rgb(155, 226, 255);
 
-            if (bilinear)
+            // Floor.
+            for (int y = endy; y < ScreenHeight; ++y)
+                pixels[y * ScreenWidth + x] = rgb(53, 37, 26);
+
+            // Walls.
+            if (texture)
             {
-                const float su = u * textures[0].w - 0.5f;
-                const int iu = static_cast<int>(floor(su));
-                const float fu0 = su - iu;
-                const float fu1 = 1.0f - fu0;
-                myassert(fu0 >= 0.0f && fu0 < 1.0f);
+                const float shade = 1.0f - min(d / 8.0f, 1.0f);
 
-                for (int y = starty; y < endy; ++y)
+                if (bilinear)
                 {
-                    const float v = (y + 0.5f) * rcpwallheight;
-                    const float sv = v * textures[0].h - 0.5f;
-                    const int iv = static_cast<int>(floor(sv));
-                    const float fv0 = sv - iv;
-                    const float fv1 = 1.0f - fv0;
-                    myassert(fv0 >= 0.0f && fv0 < 1.0f);
+                    const float su = u * textures[0].w - 0.5f;
+                    const int iu = static_cast<int>(floor(su));
+                    const float fu0 = su - iu;
+                    const float fu1 = 1.0f - fu0;
+                    myassert(fu0 >= 0.0f && fu0 < 1.0f);
 
-                    const Texture* tex = &textures[0];
-                    const uint8_t* data00 = lookup_texture(tex, iu + 0, iv + 0);
-                    const uint8_t* data10 = lookup_texture(tex, iu + 1, iv + 0);
-                    const uint8_t* data01 = lookup_texture(tex, iu + 0, iv + 1);
-                    const uint8_t* data11 = lookup_texture(tex, iu + 1, iv + 1);
+                    for (int y = starty; y < endy; ++y)
+                    {
+                        const float v = (y - wallstarty + 0.5f) * rcpwallheight;
+                        const float sv = v * textures[0].h - 0.5f;
+                        const int iv = static_cast<int>(floor(sv));
+                        const float fv0 = sv - iv;
+                        const float fv1 = 1.0f - fv0;
+                        myassert(fv0 >= 0.0f && fv0 < 1.0f);
 
-                    float r = (data00[0] * fu1 + data10[0] * fu0) * fv1 + (data01[0] * fu1 + data11[0] * fu0) * fv0;
-                    float g = (data00[1] * fu1 + data10[1] * fu0) * fv1 + (data01[1] * fu1 + data11[1] * fu0) * fv0;
-                    float b = (data00[2] * fu1 + data10[2] * fu0) * fv1 + (data01[2] * fu1 + data11[2] * fu0) * fv0;
+                        const Texture* tex = &textures[0];
+                        const uint8_t* data00 = lookup_texture(tex, iu + 0, iv + 0);
+                        const uint8_t* data10 = lookup_texture(tex, iu + 1, iv + 0);
+                        const uint8_t* data01 = lookup_texture(tex, iu + 0, iv + 1);
+                        const uint8_t* data11 = lookup_texture(tex, iu + 1, iv + 1);
 
-                    r *= shade;
-                    g *= shade;
-                    b *= shade;
+                        float r = (data00[0] * fu1 + data10[0] * fu0) * fv1 + (data01[0] * fu1 + data11[0] * fu0) * fv0;
+                        float g = (data00[1] * fu1 + data10[1] * fu0) * fv1 + (data01[1] * fu1 + data11[1] * fu0) * fv0;
+                        float b = (data00[2] * fu1 + data10[2] * fu0) * fv1 + (data01[2] * fu1 + data11[2] * fu0) * fv0;
 
-                    const int py = y + (ScreenHeight / 2 - wallheight / 2);
-                    pixels[py * ScreenWidth + x] =
-                        rgb(
-                            static_cast<uint8_t>(r),
-                            static_cast<uint8_t>(g),
-                            static_cast<uint8_t>(b));
+                        r *= shade;
+                        g *= shade;
+                        b *= shade;
+
+                        pixels[y * ScreenWidth + x] =
+                            rgb(
+                                static_cast<uint8_t>(r),
+                                static_cast<uint8_t>(g),
+                                static_cast<uint8_t>(b));
+                    }
+                }
+                else
+                {
+                    const float su = u * textures[0].w;
+                    const int iu = static_cast<int>(su);
+                    myassert(iu >= 0 && iu < textures[0].w);
+                    const float fu = su - iu;
+                    myassert(fu >= 0.0f && fu < 1.0f);
+
+                    for (int y = starty; y < endy; ++y)
+                    {
+                        const float v = (y - wallstarty + 0.5f) * rcpwallheight;
+                        const float sv = v * textures[0].h;
+                        const int iv = static_cast<int>(sv);
+                        myassert(iv >= 0 && iv < textures[0].h);
+                        const float fv = sv - iv;
+                        myassert(fv >= 0.0f && fv < 1.0f);
+
+                        const Texture* tex = &textures[0];
+                        const uint8_t* data = &tex->data[(iv * tex->w + iu) * 4];
+
+                        pixels[y * ScreenWidth + x] =
+                            rgb(
+                                static_cast<uint8_t>(data[0] * shade),
+                                static_cast<uint8_t>(data[1] * shade),
+                                static_cast<uint8_t>(data[2] * shade));
+                    }
                 }
             }
             else
             {
-                const float su = u * textures[0].w;
-                const int iu = static_cast<int>(su);
-                myassert(iu >= 0 && iu < textures[0].w);
-                const float fu = su - iu;
-                myassert(fu >= 0.0f && fu < 1.0f);
-
                 for (int y = starty; y < endy; ++y)
-                {
-                    const float v = (y + 0.5f) * rcpwallheight;
-                    const float sv = v * textures[0].h;
-                    const int iv = static_cast<int>(sv);
-                    myassert(iv >= 0 && iv < textures[0].h);
-                    const float fv = sv - iv;
-                    myassert(fv >= 0.0f && fv < 1.0f);
-
-                    const Texture* tex = &textures[0];
-                    const uint8_t* data = &tex->data[(iv * tex->w + iu) * 4];
-
-                    const int py = y + (ScreenHeight / 2 - wallheight / 2);
-                    pixels[py * ScreenWidth + x] =
-                        rgb(
-                            static_cast<uint8_t>(data[0] * shade),
-                            static_cast<uint8_t>(data[1] * shade),
-                            static_cast<uint8_t>(data[2] * shade));
-                }
+                    pixels[y * ScreenWidth + x] = rgb(80, 80, 80);
             }
         }
     }
@@ -668,6 +687,10 @@ extern "C" int main(int argc, char* argv[])
 
                   case SDLK_r:
                     player.reset();
+                    break;
+
+                  case SDLK_t:
+                    texture = !texture;
                     break;
 
                   case SDLK_TAB:
