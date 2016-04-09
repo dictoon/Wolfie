@@ -1,5 +1,12 @@
 # Wolfie
-A simple Wolfenstein 3D-like engine written in portable C++ with [SDL](https://www.libsdl.org/) and released under the MIT license.
+A simple Wolfenstein 3D-like engine written in portable C++ with [SDL 2.0](https://www.libsdl.org/) and released under the MIT license.
+
+Features:
+* Pure old-school software ray casting
+* Optional bilinear filtering
+* Proper collision handling, including wall-sliding
+* Multithreading via OpenMP
+* SDL 2.0 for cross-platform display and input handling
 
 ![Screenshot](/screenshot.png?raw=true)
 
