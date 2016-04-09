@@ -12,3 +12,4 @@ Keys:
 * Tab to toggle the minimap
 * `t` to toggle texturing
 * `b` to toggle bilinear filtering
+* Escape to quit
