@@ -1,6 +1,8 @@
 # Wolfie
 A simple Wolfenstein 3D-like engine written in portable C++ with [SDL 2.0](https://www.libsdl.org/) and released under the MIT license.
 
+Feel free to contact me on Twitter: [@franzbeaune](https://twitter.com/franzbeaune)
+
 Features:
 * Pure old-school software ray casting
 * Optional bilinear filtering
