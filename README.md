@@ -10,7 +10,7 @@ Features:
 
 ![Screenshot](/screenshot.png?raw=true)
 
-[Download 64-bit Windows binary](https://github.com/dictoon/Wolfie/releases/download/1.0.0/Wolfie-1.0.0.zip)
+[Download 64-bit Windows binary of Wolfie 1.1.0](https://github.com/dictoon/Wolfie/releases/download/1.1.0/Wolfie-1.1.0.zip)
 
 Keys:
 * Arrows to move and rotate
