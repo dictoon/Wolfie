@@ -1,6 +1,8 @@
 archives/
 distrib/
 x64/
+*.db
+*.opendb
 *.opensdf
 *.sdf
 *.suo
