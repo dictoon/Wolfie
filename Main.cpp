@@ -14,6 +14,9 @@ using namespace std;
 #define VSYNC
 #define MULTITHREAD
 
+const int ScreenWidth = 1280;
+const int ScreenHeight = 720;
+
 #ifdef NDEBUG
 #define myassert(cond)
 #else
@@ -39,9 +42,6 @@ float dtor(float d)
 {
     return d * Pi / 180.0f;
 }
-
-const int ScreenWidth = 1280;
-const int ScreenHeight = 720;
 
 struct ScreenPixel
 {
