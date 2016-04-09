@@ -10,6 +10,10 @@
 
 using namespace std;
 
+#define FLIP
+#define VSYNC
+#define MULTITHREAD
+
 #ifdef NDEBUG
 #define myassert(cond)
 #else
@@ -36,8 +40,8 @@ float dtor(float d)
     return d * Pi / 180.0f;
 }
 
-const int ScreenWidth = 1024;
-const int ScreenHeight = 768;
+const int ScreenWidth = 1280;
+const int ScreenHeight = 720;
 
 struct ScreenPixel
 {
@@ -54,7 +58,11 @@ ScreenPixel rgb(uint8_t r, uint8_t g, uint8_t b)
 
 void setpix(ScreenPixel* pixels, const int x, const int y, const ScreenPixel& color)
 {
+#ifdef FLIP
+    pixels[x * ScreenHeight + y] = color;
+#else
     pixels[y * ScreenWidth + x] = color;
+#endif
 }
 
 #if 0
@@ -447,6 +455,9 @@ void update()
 
 void renderview(ScreenPixel* pixels)
 {
+#ifdef MULTITHREAD
+#pragma omp parallel for
+#endif
     for (int x = 0; x < ScreenWidth; ++x)
     {
         const float sx = (FilmWidth * 0.5f) - (x + 0.5f) * (FilmWidth / ScreenWidth);
@@ -476,11 +487,23 @@ void renderview(ScreenPixel* pixels)
 
             // Sky.
             for (int y = 0; y < starty; ++y)
+            {
+#ifdef FLIP
+                pixels[x * ScreenHeight + y] = rgb(155, 226, 255);
+#else
                 pixels[y * ScreenWidth + x] = rgb(155, 226, 255);
+#endif
+            }
 
             // Floor.
             for (int y = endy; y < ScreenHeight; ++y)
+            {
+#ifdef FLIP
+                pixels[x * ScreenHeight + y] = rgb(53, 37, 26);
+#else
                 pixels[y * ScreenWidth + x] = rgb(53, 37, 26);
+#endif
+            }
 
             // Walls.
             if (texture)
@@ -518,7 +541,11 @@ void renderview(ScreenPixel* pixels)
                         g *= shade;
                         b *= shade;
 
+#ifdef FLIP
+                        pixels[x * ScreenHeight + y] =
+#else
                         pixels[y * ScreenWidth + x] =
+#endif
                             rgb(
                                 static_cast<uint8_t>(r),
                                 static_cast<uint8_t>(g),
@@ -545,7 +572,11 @@ void renderview(ScreenPixel* pixels)
                         const Texture* tex = &textures[0];
                         const uint8_t* data = &tex->data[(iv * tex->w + iu) * 4];
 
+#ifdef FLIP
+                        pixels[x * ScreenHeight + y] =
+#else
                         pixels[y * ScreenWidth + x] =
+#endif
                             rgb(
                                 static_cast<uint8_t>(data[0] * shade),
                                 static_cast<uint8_t>(data[1] * shade),
@@ -556,7 +587,13 @@ void renderview(ScreenPixel* pixels)
             else
             {
                 for (int y = starty; y < endy; ++y)
+                {
+#ifdef FLIP
+                    pixels[x * ScreenHeight + y] = rgb(80, 80, 80);
+#else
                     pixels[y * ScreenWidth + x] = rgb(80, 80, 80);
+#endif
+                }
             }
         }
     }
@@ -623,6 +660,19 @@ extern "C" int main(int argc, char* argv[])
         return 1;
     }
 
+    for (int i = 0, e = SDL_GetNumRenderDrivers(); i < e; ++i)
+    {
+        SDL_RendererInfo info;
+        SDL_GetRenderDriverInfo(i, &info);
+        fprintf(stderr, "Driver #%d:\n", i);
+        fprintf(stderr, "  Name                 : %s\n", info.name);
+        fprintf(stderr, "  Software fallback    : %s\n", (info.flags & SDL_RENDERER_SOFTWARE) != 0 ? "yes" : "no");
+        fprintf(stderr, "  Hardware accelerated : %s\n", (info.flags & SDL_RENDERER_ACCELERATED) != 0 ? "yes" : "no");
+        fprintf(stderr, "  VSync                : %s\n", (info.flags & SDL_RENDERER_PRESENTVSYNC) != 0 ? "yes" : "no");
+        fprintf(stderr, "  Render-to-texture    : %s\n", (info.flags & SDL_RENDERER_TARGETTEXTURE) != 0 ? "yes" : "no");
+        fprintf(stderr, "\n");
+    }
+
     SDL_Window* window =
         SDL_CreateWindow(
             "Wolfie",
@@ -641,7 +691,13 @@ extern "C" int main(int argc, char* argv[])
         SDL_CreateRenderer(
             window,
             -1,
-            SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+#ifdef VSYNC
+            SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC
+#else
+            SDL_RENDERER_ACCELERATED
+#endif
+        );
+
     if (renderer == nullptr)
     {
         SDL_DestroyWindow(window);
@@ -655,8 +711,14 @@ extern "C" int main(int argc, char* argv[])
             renderer,
             SDL_PIXELFORMAT_ARGB8888,
             SDL_TEXTUREACCESS_STREAMING,
+#ifdef FLIP
+            static_cast<int>(ScreenHeight),
+            static_cast<int>(ScreenWidth)
+#else
             static_cast<int>(ScreenWidth),
-            static_cast<int>(ScreenHeight));
+            static_cast<int>(ScreenHeight)
+#endif
+        );
 
     ScreenPixel* pixels = new ScreenPixel[ScreenWidth * ScreenHeight];
     
@@ -665,6 +727,8 @@ extern "C" int main(int argc, char* argv[])
     bool quit = false;
     while (!quit)
     {
+        const uint32_t starttime = SDL_GetTicks();
+
         SDL_Event e;
         while (SDL_PollEvent(&e))
         {
@@ -704,18 +768,32 @@ extern "C" int main(int argc, char* argv[])
         }
 
         update();
-
-        const uint32_t starttime = SDL_GetTicks();
         render(pixels);
+
+#ifdef FLIP
+        SDL_UpdateTexture(screen_texture, nullptr, pixels, ScreenHeight * sizeof(ScreenPixel));
+#else
+        SDL_UpdateTexture(screen_texture, nullptr, pixels, ScreenWidth * sizeof(ScreenPixel));
+#endif
+
+        SDL_RenderClear(renderer);
+
+#ifdef FLIP
+        SDL_Rect dstrect;
+        dstrect.x = (ScreenWidth - ScreenHeight) / 2 - 1;
+        dstrect.y = (ScreenHeight - ScreenWidth) / 2;
+        dstrect.w = ScreenHeight;
+        dstrect.h = ScreenWidth;
+        SDL_RenderCopyEx(renderer, screen_texture, nullptr, &dstrect, 90, nullptr, SDL_FLIP_VERTICAL);
+#else
+        SDL_RenderCopy(renderer, screen_texture, nullptr, nullptr);
+#endif
+
+        SDL_RenderPresent(renderer);
+
         const uint32_t elapsed = SDL_GetTicks() - starttime;
         const uint32_t fps = 1000 / elapsed;
         fprintf(stderr, "fps: %u\n", fps);
-
-        SDL_UpdateTexture(screen_texture, nullptr, pixels, ScreenWidth * sizeof(ScreenPixel));
-
-        SDL_RenderClear(renderer);
-        SDL_RenderCopy(renderer, screen_texture, NULL, NULL);
-        SDL_RenderPresent(renderer);
     }
 
     done();
